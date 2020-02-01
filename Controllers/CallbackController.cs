@@ -1,9 +1,15 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Net;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json.Linq;
 using VkNet.Abstractions;
 using VkNet.Model;
+using VkNet.Model.Attachments;
 using VkNet.Model.RequestParams;
 using VkNet.Utils;
 
@@ -38,13 +44,40 @@ namespace DemotivatorBot.Controllers
                 {
                     // Десериализация
                     var msg = Message.FromJson(new VkResponse(updates.Object));
-                        // Отправим в ответ полученный от пользователя текст
-                    _vkApi.Messages.Send(new MessagesSendParams
+                    var uploadServer = _vkApi.Photo.GetMessagesUploadServer(msg.PeerId.Value);
+                    var wc = new WebClient();
+                    var fileName = "";
+                    foreach(var attach in msg.Attachments)
                     {
-                        RandomId = new DateTime().Millisecond,
-                        PeerId = msg.PeerId,
-                        Message = msg.Text
-                    });
+                        if (attach.Type == typeof(Photo))
+                        {
+                            if(attach.Instance is Photo ph)
+                            {
+                                fileName = ph.GetHashCode().ToString() + ".jpg";
+                                wc.DownloadFile(ph.PhotoSrc, fileName);
+                                break;
+                            }
+                        }
+                    }
+                    if (fileName != "")
+                    {
+                        var demProc = new DemotivatorGenerator.Processing.DemotivatorProcessor("ДИМАТИВАТОР БОТ","ЧТО ДАЛЬШЕ?");
+                        var demimg = demProc.Process((Bitmap)Bitmap.FromFile(fileName));
+                        demimg.Save("proc_" + fileName);
+                        var result = Encoding.ASCII.GetString(wc.UploadFile(uploadServer.UploadUrl, "proc_" + fileName));
+                        var photo = _vkApi.Photo.SaveMessagesPhoto(result);
+
+                        _vkApi.Messages.Send(new MessagesSendParams
+                        {
+                            UserId = msg.PeerId,
+                            Message = "сообщение",
+                            Attachments = new List<MediaAttachment>
+                            {
+                                photo.FirstOrDefault() //берем первое фото из коллекции.
+                            }
+                        });
+                    }
+                        // Отправим в ответ полученный от пользователя текст
                     break;
                 }
             }
